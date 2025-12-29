@@ -20,7 +20,3 @@ __pycache__/
 *.parquet
 *.log
 
-# Cân nhắc: Nếu model .h5 hoặc .jar > 100MB thì Github sẽ chặn.
-# Nếu file nhỏ thì giữ lại, nếu lớn thì bỏ comment dòng dưới để ignore:
-# models/*.h5
-# *.jar
