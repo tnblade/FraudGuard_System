@@ -2,11 +2,23 @@
 # Dashboard Streamlit để hiển thị cảnh báo gian lận
 
 # src/dashboard/app.py
+import sys
+import os
+
+# --- 1. SỬA LỖI IMPORT (QUAN TRỌNG) ---
+# Thêm thư mục gốc vào đường dẫn để Python tìm thấy 'src'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+sys.path.append(root_dir)
+
+# --- 2. CODE CHÍNH ---
 import streamlit as st
 import pandas as pd
 import json
 import time
+import subprocess
 from kafka import KafkaConsumer
+# Bây giờ dòng này mới hoạt động:
 from src.database.db_manager import DBManager
 
 # --- CẤU HÌNH ---
@@ -126,7 +138,8 @@ with tab3:
                 
                 # Gọi script train
                 try:
-                    res = subprocess.run(["python", "src/ml/trainer.py"], capture_output=True, text=True)
+                    # Chạy từ thư mục gốc
+                    res = subprocess.run(["python", "src/ml/trainer.py"], cwd=root_dir, capture_output=True, text=True)
                     if res.returncode == 0:
                         status.update(label="Training Completed!", state="complete")
                         st.success("✅ Model mới đã được lưu và sẵn sàng deploy!")
