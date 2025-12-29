@@ -1,0 +1,26 @@
+# Ignore các file và thư mục không cần thiết để giữ repository sạch sẽ
+# Thư mục môi trường ảo
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Biến môi trường & Secrets (Bảo mật)
+.env
+
+# Các file IDE (VS Code, PyCharm)
+.idea/
+.vscode/
+
+# Dữ liệu lớn (Big Data không nên push lên Git thường)
+*.csv
+*.parquet
+*.log
+
+# Cân nhắc: Nếu model .h5 hoặc .jar > 100MB thì Github sẽ chặn.
+# Nếu file nhỏ thì giữ lại, nếu lớn thì bỏ comment dòng dưới để ignore:
+# models/*.h5
+# *.jar
