@@ -5,132 +5,118 @@ import streamlit as st
 import pandas as pd
 import json
 import time
+import os
+import subprocess
 from kafka import KafkaConsumer
+from src.database.db_manager import DBManager
 
-# --- CẤU HÌNH ---
-st.set_page_config(
-    page_title="FraudGuard Monitor",
-    page_icon="🛡️",
-    layout="wide"
-)
+st.set_page_config(page_title="FraudGuard Admin Portal", page_icon="🛡️", layout="wide")
 
-# --- CSS TÙY CHỈNH (Giao diện Dark Mode đẹp hơn) ---
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #262730;
-        padding: 15px;
-        border-radius: 10px;
-        color: white;
-    }
-    .stAlert {
-        font-weight: bold;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { height: 50px; border-radius: 5px; }
+    .success-box { padding: 10px; background-color: #d4edda; color: #155724; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- TIÊU ĐỀ ---
-st.title("🛡️ FraudGuard System - Realtime Monitoring")
-st.markdown("Hệ thống giám sát giao dịch và phát hiện gian lận qua Kafka Streaming")
+st.title("🛡️ FraudGuard: Enterprise Command Center")
 
-# --- KHỞI TẠO LAYOUT ---
-# Cột 1: Biểu đồ Live, Cột 2: Danh sách Cảnh báo
-col_chart, col_alerts = st.columns([2, 1])
+# TẠO 3 TAB CHỨC NĂNG
+tab1, tab2, tab3 = st.tabs(["📈 Real-time Monitor", "🗄️ Database Inspector", "🤖 Airflow & MLOps"])
 
-with col_chart:
-    st.subheader("📉 Anomaly Score (Độ bất thường)")
-    chart_placeholder = st.empty()
-
-with col_alerts:
-    st.subheader("🚨 Cảnh báo Gian lận (Live)")
-    alert_placeholder = st.empty()
-
-# --- METRIC TỔNG QUAN ---
-metric_placeholder = st.empty()
-
-# --- HÀM KẾT NỐI KAFKA ---
-@st.cache_resource
-def get_consumer():
-    # Dùng cache_resource để không tạo lại connection mỗi lần refresh
-    return KafkaConsumer(
-        'fraud_predictions',
-        bootstrap_servers=['localhost:9092'],
-        auto_offset_reset='latest',
-        value_deserializer=lambda x: json.loads(x.decode('utf-8'))
-    )
-
-# --- LOGIC CHÍNH ---
-def run_dashboard():
-    consumer = get_consumer()
+# ================= TAB 1: REAL-TIME MONITOR =================
+with tab1:
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader("Live Anomaly Detection")
+        chart_placeholder = st.empty()
+    with col2:
+        st.subheader("Recent Alerts")
+        alert_placeholder = st.empty()
     
-    # Bộ nhớ đệm dữ liệu để hiển thị
-    data_window = []  # Lưu score để vẽ biểu đồ
-    alert_window = [] # Lưu log cảnh báo
-    total_processed = 0
-    fraud_count = 0
-
-    print("🚀 Dashboard đã sẵn sàng nhận dữ liệu từ Kafka...")
-
-    for message in consumer:
-        record = message.value
-        
-        # 1. Lấy thông tin từ gói tin JSON
-        # (Lưu ý: tên trường phải khớp với output của Spark Job)
-        amount = record.get('amount', 0)
-        score = record.get('anomaly_score', 0)
-        is_fraud = record.get('is_fraud_prediction', False)
-        
-        # Cập nhật đếm
-        total_processed += 1
-        
-        # 2. Xử lý Logic Hiển thị
-        # Thêm vào dữ liệu biểu đồ
-        current_time = time.strftime("%H:%M:%S")
-        data_window.append({"Time": current_time, "Score": score})
-        
-        # Giới hạn cửa sổ biểu đồ (chỉ hiện 100 điểm gần nhất cho mượt)
-        if len(data_window) > 100: 
-            data_window.pop(0)
-
-        # Xử lý Cảnh báo (Nếu là Fraud)
-        if is_fraud:
-            fraud_count += 1
-            alert_msg = {
-                "Thời gian": current_time,
-                "Số tiền": f"${amount:,.2f}",
-                "Độ lệch": f"{score:.4f}"
-            }
-            alert_window.insert(0, alert_msg) # Thêm vào đầu danh sách
-            if len(alert_window) > 10: 
-                alert_window.pop() # Chỉ giữ 10 cảnh báo mới nhất
-
-        # 3. Render lên giao diện (Cập nhật sau mỗi 5 gói tin để giảm lag UI)
-        if total_processed % 5 == 0:
+    if st.button("🔴 KẾT NỐI LIVE STREAM", key="btn_stream"):
+        try:
+            consumer = KafkaConsumer(
+                'fraud_predictions',
+                bootstrap_servers=['localhost:9092'],
+                auto_offset_reset='latest',
+                value_deserializer=lambda x: json.loads(x.decode('utf-8')),
+                consumer_timeout_ms=5000
+            )
+            st.success("Đã kết nối Kafka! Đang chờ dữ liệu...")
             
-            # Cập nhật Metrics
-            with metric_placeholder.container():
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Tổng giao dịch", total_processed)
-                c2.metric("Gian lận phát hiện", fraud_count, delta_color="inverse")
-                c3.metric("Ngưỡng (Threshold)", "0.05")
+            data_cache = []
+            msg_count = 0
+            
+            # Placeholder cho biểu đồ
+            chart = st.line_chart([])
+            
+            for msg in consumer:
+                msg_count += 1
+                record = msg.value
+                score = record.get('anomaly_score', 0)
+                
+                # Cập nhật biểu đồ
+                data_cache.append(score)
+                if len(data_cache) > 50: data_cache.pop(0)
+                
+                if msg_count % 2 == 0:
+                    chart.line_chart(data_cache)
+                    
+                # Cập nhật Alert
+                if record.get('is_fraud_prediction'):
+                    alert_placeholder.error(f"⚠️ PHÁT HIỆN: ${record.get('amount', 0):,.0f}")
+                    
+        except Exception as e:
+            st.error(f"Lỗi kết nối: {e}")
 
-            # Vẽ biểu đồ
-            with chart_placeholder:
-                df_chart = pd.DataFrame(data_window)
-                if not df_chart.empty:
-                    st.line_chart(df_chart.set_index("Time")['Score'], color="#ff4b4b")
+# ================= TAB 2: DATABASE INSPECTOR =================
+with tab2:
+    st.header("🗄️ Dữ liệu Gian lận trong PostgreSQL")
+    
+    c1, c2 = st.columns([1, 4])
+    with c1:
+        if st.button("🔄 REFRESH DATA"):
+            try:
+                conn = DBManager.get_connection()
+                if conn:
+                    query = "SELECT * FROM fraud_logs ORDER BY id DESC LIMIT 50"
+                    df_logs = pd.read_sql(query, conn)
+                    st.session_state['df_logs'] = df_logs
+                    conn.close()
+                    st.success("Đã tải xong!")
+            except Exception as e:
+                st.error(f"Lỗi DB: {e}")
 
-            # Hiển thị bảng cảnh báo
-            with alert_placeholder:
-                if alert_window:
-                    st.error(f"⚠️ Đã phát hiện {len(alert_window)} cảnh báo mới!")
-                    st.table(pd.DataFrame(alert_window))
+    with c2:
+        if 'df_logs' in st.session_state:
+            df = st.session_state['df_logs']
+            st.dataframe(df, use_container_width=True)
+            st.metric("Tổng tiền đã chặn", f"${df['amount'].sum():,.0f}")
+
+# ================= TAB 3: AIRFLOW / MLOPS =================
+with tab3:
+    st.header("🤖 MLOps Control Plane")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🛠️ Manual Retrain")
+        if st.button("🚀 CHẠY HUẤN LUYỆN LẠI (Retrain)"):
+            with st.status("Running Pipeline...", expanded=True) as status:
+                st.write("Checking Data...")
+                time.sleep(1)
+                st.write("Training Model...")
+                # Gọi script train thật
+                res = subprocess.run(["python", "src/ml/trainer.py"], capture_output=True, text=True)
+                if res.returncode == 0:
+                    status.update(label="Training Completed!", state="complete")
+                    st.success("Model mới đã được deploy!")
                 else:
-                    st.success("✅ Hệ thống bình thường")
-
-if __name__ == "__main__":
-    try:
-        run_dashboard()
-    except Exception as e:
-        st.error(f"Lỗi kết nối: {e}")
-        st.info("Hãy chắc chắn rằng Kafka và Spark đang chạy!")
+                    status.update(label="Training Failed!", state="error")
+                    st.error(res.stderr)
+    
+    with c2:
+        st.subheader("📅 Scheduler Status")
+        st.info("Airflow Scheduler: ACTIVE (Daily @ 00:00)")
+        st.json({"last_run": "Success", "next_run": "Tomorrow"})

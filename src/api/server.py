@@ -7,15 +7,21 @@ from kafka import KafkaProducer
 import json
 import uvicorn
 
-app = FastAPI(title="FraudGuard API Gateway")
+app = FastAPI(title="FraudGuard API")
 
-# Cấu hình Kafka Producer
-producer = KafkaProducer(
-    bootstrap_servers=['localhost:9092'],
-    value_serializer=lambda x: json.dumps(x).encode('utf-8')
-)
+# Cấu hình Kafka Producer (Có try-catch để không sập nếu Kafka chưa lên)
+def get_producer():
+    try:
+        return KafkaProducer(
+            bootstrap_servers=['localhost:9092'],
+            value_serializer=lambda x: json.dumps(x).encode('utf-8')
+        )
+    except Exception as e:
+        print(f"Warning: Kafka chưa sẵn sàng ({e})")
+        return None
 
-# Định nghĩa dữ liệu đầu vào (Data Model)
+producer = get_producer()
+
 class TransactionRequest(BaseModel):
     step: int = 1
     type: str
@@ -26,26 +32,28 @@ class TransactionRequest(BaseModel):
     nameDest: str
     oldbalanceDest: float
     newbalanceDest: float
+    isFraud: int = 0
+    isFlaggedFraud: int = 0
 
-@app.post("/api/v1/transaction")
-async def process_transaction(transaction: TransactionRequest):
-    """
-    Endpoint nhận giao dịch từ bên ngoài (Web/Mobile App)
-    """
-    data = transaction.dict()
-    
+@app.get("/")
+def home():
+    return {"status": "running", "message": "FraudGuard API is ready!"}
+
+@app.post("/api/v1/transaction") # Lưu ý đường dẫn này
+async def receive_transaction(tx: TransactionRequest):
+    global producer
+    if not producer:
+        producer = get_producer()
+        if not producer:
+            raise HTTPException(status_code=500, detail="Kafka Connection Failed")
+
+    data = tx.dict()
     try:
-        # 1. Đẩy vào Kafka để Spark xử lý ngầm (Async Processing)
         producer.send('raw_transactions', value=data)
-        
-        return {
-            "status": "received", 
-            "message": "Giao dịch đang được xử lý bởi AI",
-            "data": data
-        }
+        producer.flush()
+        return {"status": "received", "amount": data['amount']}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # Chạy server tại port 8000
     uvicorn.run(app, host="0.0.0.0", port=8000)
