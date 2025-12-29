@@ -1,0 +1,12 @@
+pyspark
+kafka-python
+tensorflow
+pandas
+numpy
+scikit-learn
+fastapi
+uvicorn
+pyngrok
+streamlit
+psycopg2-binary
+altair
