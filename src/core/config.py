@@ -1,3 +1,7 @@
+# src/core/config.py
+# Cấu hình chung cho toàn bộ hệ thống Fraud Detection
+# Bao gồm đường dẫn, cấu hình Kafka, Database, và các hằng số khác
+#        
 import os
 import getpass # Thư viện để nhập ẩn
 
