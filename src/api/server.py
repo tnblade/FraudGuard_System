@@ -1,39 +1,51 @@
 # src/api/server.py
 # API server để nhận giao dịch và truy vấn cảnh báo gian lận
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from kafka import KafkaProducer
 import json
-from src.core.config import KAFKA_BOOTSTRAP_SERVERS, KAFKA_TOPIC
-from src.database.db_manager import DBManager
+import uvicorn
 
-app = FastAPI()
+app = FastAPI(title="FraudGuard API Gateway")
 
-# Producer Init
-try:
-    producer = KafkaProducer(
-        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-        value_serializer=lambda x: json.dumps(x).encode('utf-8')
-    )
-except: producer = None
+# Cấu hình Kafka Producer
+producer = KafkaProducer(
+    bootstrap_servers=['localhost:9092'],
+    value_serializer=lambda x: json.dumps(x).encode('utf-8')
+)
 
-class Transaction(BaseModel):
-    amount: float
+# Định nghĩa dữ liệu đầu vào (Data Model)
+class TransactionRequest(BaseModel):
+    step: int = 1
     type: str
-    # ... fields khác ...
+    amount: float
+    nameOrig: str
+    oldbalanceOrg: float
+    newbalanceOrig: float
+    nameDest: str
+    oldbalanceDest: float
+    newbalanceDest: float
 
-@app.post("/send")
-def send_tx(tx: Transaction):
-    if producer:
-        producer.send(KAFKA_TOPIC, tx.dict())
-        return {"status": "sent"}
-    return {"status": "error"}
+@app.post("/api/v1/transaction")
+async def process_transaction(transaction: TransactionRequest):
+    """
+    Endpoint nhận giao dịch từ bên ngoài (Web/Mobile App)
+    """
+    data = transaction.dict()
+    
+    try:
+        # 1. Đẩy vào Kafka để Spark xử lý ngầm (Async Processing)
+        producer.send('raw_transactions', value=data)
+        
+        return {
+            "status": "received", 
+            "message": "Giao dịch đang được xử lý bởi AI",
+            "data": data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/alerts")
-def get_alerts():
-    conn = DBManager.get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM fraud_alerts ORDER BY id DESC LIMIT 10")
-    rows = cur.fetchall()
-    return rows
+if __name__ == "__main__":
+    # Chạy server tại port 8000
+    uvicorn.run(app, host="0.0.0.0", port=8000)
