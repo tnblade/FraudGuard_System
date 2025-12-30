@@ -10,6 +10,7 @@ import json
 import uvicorn
 import time
 import asyncio
+import subprocess
 
 # --- CẤU HÌNH ---
 KAFKA_SERVER = 'localhost:9092'
@@ -92,6 +93,19 @@ async def receive_transaction(tx: TransactionRequest):
             "amount": data['amount'],
             "message": "Transaction queued for AI processing"
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/retrain")
+async def trigger_retrain():
+    """
+    Endpoint để Airflow từ xa gọi vào kích hoạt việc Train Model
+    """
+    try:
+        # Chạy file trainer.py dưới nền
+        # Lưu ý: Cần đường dẫn tuyệt đối
+        subprocess.Popen(["python", "/kaggle/working/FraudGuard_System/src/ml/trainer.py"])
+        return {"status": "success", "message": "Pipeline huấn luyện đã được kích hoạt!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
